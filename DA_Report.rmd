@@ -1,0 +1,278 @@
+---
+title: "The Effect of Research Experience on Graduate Admissions"
+author: "2383746W"
+output:
+  pdf_document:
+          latex_engine: pdflatex
+          number_sections: yes
+fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	comment = NA
+)
+```
+
+```{r libraries}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(moderndive)
+library(skimr)
+library(kableExtra)
+library(gridExtra)
+library(infer)
+library(broom)
+```
+
+```{r data, echo = FALSE, eval = TRUE, warning = FALSE, message = FALSE}
+# Full dataset
+admissions <- read.csv("Admission_Predict.csv")   
+# Subset only keep variables of interest
+admissions <- admissions %>%
+              mutate(research=ifelse(Research==0, "No", "Yes"))
+admissions <- admissions[,c("Chance.of.Admit", "GRE.Score", "research")]
+```
+
+# Introduction {#sec:int}
+Admission to graduate programmes has become increasingly competitive, and many universities have addressed this issue by introducing additional entry requirements for applicants. In particular, institutions in the United States emphasize the importance of obtaining high scores in the "Graduate Record Examinations (GRE)", which is a standardised test that assesses graduates' academic skill set. In this report, GRE scores from 400 UCLA graduates were considered along with a record of prior research experience in order to investigate whether the latter has an effect on their chance of being admitted to graduate programmes.
+
+In particular, this work presents numerical and graphical summaries to reveal the structure and underlying relationship between the response variable `Chance.of.Admit` and the explanatory variable `GRE.Score`, when taking into account the categorical input `research`. Two linear regression models are fit to the data to estimate the difference, on average, between the chance of admission of those students who have prior research experience, and those who do not. The model selection procedure is carried out to determine the preferred model.
+
+# Exploratory Data Analysis {#sec:eda}
+In this section, we identify simple relationships between our variables of interest, before proceeding with more detailed formal analysis. The summary statistics of the chance of admission are presented below. For each group i.e. researchers ("Yes") and non-researchers ("No"), the corresponding figures are shown separately.
+
+```{r summary, echo=FALSE, message=FALSE, warning=FALSE}
+admissions %>%
+group_by(research) %>%
+summarise(n=n(),
+          Mean=round(mean(Chance.of.Admit),digits=1), 
+          St.Dev=round(sd(Chance.of.Admit),digits=1),
+          Min=min(Chance.of.Admit), 
+          Q1 = quantile(Chance.of.Admit,0.25), 
+          Median=median(Chance.of.Admit),
+          Q3 = quantile(Chance.of.Admit,0.75), 
+          Max=max(Chance.of.Admit)) %>%
+kable(caption = '\\label{tab:summary} Summary statistics on the chance of admission by research experience of 400 graduate applicants.', format = "latex") %>%
+kable_styling(latex_options = "hold_position")
+```
+
+Table \ref{tab:summary} reveals that the dataset of interest contains 9.5% more graduates with research experience, than those without prior research exposure (219 compared to 181). Moreover, apart from equal standard deviations (0.1 for both groups), it is evident that the summaries of the research group for the chance of being admitted are consistently greater than the corresponding summaries of non-researchers. 
+
+The mean likelihood of gaining admission to a graduate programme is 0.8 compared to 0.6 for researchers and non-researchers respectively. There is a comparatively smaller difference in sample medians between the two groups, with 0.8 vs 0.65 for the same comparison. Interestingly, the range of data is higher for researchers (Max-Min=0.61) when compared to non-researchers (Max-Min=0.55). However, despite this result, the first quantile of the research group (0.73) is one per cent higher than the third quantile of the non-researcher group (0.72). Given the data, this provides the first evidence that research experience appears to positively affect the chance of admission to a graduate programme. The magnitude of this influence is approximately 15 to 20 per cent, depending on which measure of location is being taken into consideration.
+
+```{r Linear association, echo=FALSE, fig.align="center", fig.cap="\\label{fig:lin.association} Chance of admission by GRE score and research experience.", fig.pos="H", message=FALSE, warning=FALSE, out.width='60%'}
+ggplot(admissions, aes(x = GRE.Score, y = Chance.of.Admit, color = research)) +
+  geom_jitter() +
+  labs(x = "GRE Score", y = "Chance of Admit", color = "Research") +
+  geom_smooth(method = "lm", se = FALSE)
+```
+Figure \ref{fig:Linear association} shows two different intercepts and slopes, consequently `research` interacts in different ways with `GRE.Score` for both researchers and non-researchers. Comparatively to the group of non-researchers the following can be noted:
+
+- There are more observations associated with high GRE scores in the group of researchers.
+
+- The associated effect of rising GRE scores seems to be more pronounced for researchers, i.e the chance of admission for those increases faster with GRE scores above 300. 
+
+- For low GRE scores (below 300) research experience appears to be irrelevant in improving the chance of admission.
+
+- The correlation between GRE Score and the chance of admission appears to be higher for researchers since observations are less spread out around the fitted line. 
+
+We obtain the correlation by research experience where the first coefficient is calculated for the GRE score of researchers, while the second stands for non-researchers. Thus, it is of interest to compare the impact of GRE scores obtained by the two groups on the chance of admission.   
+
+```{r corrtable, echo=FALSE, message=FALSE, warning=FALSE}
+admissions %>%
+group_by(research) %>%
+summarize(corr=round(cor(Chance.of.Admit, GRE.Score), digits=4)) %>%
+kable(caption = '\\label{tab:corrtable} Correlation coefficients by research experience.', format = "latex") %>%
+kable_styling(latex_options = 'HOLD_position')
+```
+As can be seen from the table above, the correlation between the GRE score and the chance of admission is approximately 20 percent higher for the research group, hence suggesting a stronger linear association, compared to the non-research category. Based on this result, it is more likely that using an interaction model leads to more accurate inferences because, compared to the parallel slopes model, it is able to capture the different trends within the two levels of the `research` variable. 
+
+# Formal Data Analysis {#sec:fda}
+The aim of this section is to set up a statistical model which describes our given data in the most accurate way. For this reason, we will compare the performance of the "interaction model" with that of the "parallel lines model" and conduct model selection based on the obtained results.   
+
+## Interaction Model 
+As seen in the linear association plot (Figure \ref{fig:lin.association}), there is an interaction effect in our model. The effect of `GRE.score` here will depend on whether the score was achieved by researchers or non-researchers, that is, the effect of `GRE.score` on the admission chance will differ by research experience. The interaction model can be formally expressed as:
+$$
+y_{i} = \alpha ~ + ~\beta_{\mbox{gre}} \cdot \mbox{gre}_i~ + ~\beta_{\mbox{researchYes}} \cdot \mathbb{I}_{\mbox{researchYes}}(i)~ + ~\beta_{\mbox{gre, researchYes}} \cdot \mbox{gre}_i \cdot \mathbb{I}_{\mbox{researchYes}}(i)~ + ~\epsilon_i
+$$
+where
+
+- $\alpha$ is the intercept of the regression line for non-researchers;
+ 
+- $\beta_{\mbox{gre}}$ is the slope of the regression line for both researchers and non-researchers;
+
+- $\mbox{gre}_i$ is the GRE score of $i$th observation;
+
+- $\beta_{\mbox{researchYes}}$ is the additional term added to $\alpha$ to get the intercept of the regression line for males; and
+ 
+- $\mathbb{I}_{\mbox{researchYes}}(i)$ is an indicator function such that
+
+$$
+\mathbb{I}_{\mbox{researchYes}}(i)=\left\{
+            \begin{array}{ll}
+              1 ~~~ \mbox{if the} ~ i \mbox{th observation is researcher},\\
+              0 ~~~ \mbox{Otherwise}.\\
+            \end{array}
+          \right.
+$$
+
+- $\beta_{\mbox{gre, researchYes}} \cdot \mbox{gre}_i \cdot \mathbb{I}_{\mbox{researchYes}}(i)$ corresponds to the interaction term.
+
+After having defined the model specifications, we run the regression with the involved interaction term and acquire the associated estimates for the model coefficients. These are displayed in Table \ref{tab:int.model} below: 
+
+```{r int.model, echo=FALSE, message=FALSE, warning=FALSE}
+int.model <- lm(Chance.of.Admit ~ GRE.Score * research, data = admissions)
+get_regression_table(int.model) %>%
+dplyr::select(term, estimate) %>%
+kable(caption = '\\label{tab:int.model} Estimates of the parameters from the fitted interaction model.', format = "latex") %>%
+kable_styling(latex_options = 'HOLD_position')
+```
+
+Hence, after combining terms, the regression lines for researchers and non-researchers are given by:
+$$\widehat{\\Chance.of.Admit_i}=\left\{\begin{matrix} -1.686+0.008\cdot GRE.Score_i~~~~~non~researchers
+ & \\ -2.441+0.011\cdot GRE.Score_i~~~~~~~~~~~researchers
+ & 
+\end{matrix}\right.$$
+It can be noted that the interaction model allows for different slopes and intercepts for researchers and non-researchers. The increment for every GRE score unit in the group of researchers is expected to lead to a 0.003 higher chance of admission, compared to the group of non-researchers. Since it was previously shown that for low GRE scores (below 300), the fitted line for researchers lies below those of non-researchers, a lower intercept for researchers is modelled to consider this difference (-2.441 compared to -1.686).  
+
+## Parallel Lines Model
+For simplicity reasons, it can sometimes be useful to consider a parallel lines model by removing the interaction term from the interaction model. This model implies that the slope of the relationship between `Chance.of.Admit` and `GRE.score` is the same for both researchers and non-researchers, and only the intercepts of the regression lines are different. Therefore, the equation for the parallel lines model is given by:
+$$
+y_{i} = \alpha~ + ~\beta_{\mbox{gre}} \cdot \mbox{gre}_i~ + ~\beta_{\mbox{researchYes}} \cdot \mathbb{I}_{\mbox{researchYes}}(i)~ + ~\epsilon_i
+$$
+We fit the parallel lines model to the data, obtaining the following estimates for the model coefficients:
+```{r par.model, echo=FALSE, message=FALSE, warning=FALSE}
+par.model <- lm(Chance.of.Admit ~ GRE.Score + research, data = admissions)
+get_regression_table(par.model) %>%
+dplyr::select(term, estimate) %>%
+kable(caption = '\\label{tab:par.model} Estimates of the parameters from the fitted parallel lines model.', format = "latex") %>%
+kable_styling(latex_options = 'HOLD_position')
+```
+Thus, after combining terms, the regression lines for researchers and non-researchers are:
+$$\widehat{\\Chance.of.Admit_i}=\left\{\begin{matrix} -2.156+0.009\cdot GRE.Score_i~~~~~non~researchers
+ & \\ -2.118+0.009\cdot GRE.Score_i~~~~~~~~~~~researchers
+ & 
+\end{matrix}\right.$$
+
+By this model, both researchers and non-researchers have the same slope, i.e. the associated effect of GRE scores on the chance of admission is the same for both groups. Therefore, for every one point increase in `GRE.score`, there is a corresponding increase in the chance of admission of 0.009. Students with prior research experience have a higher intercept term.
+
+## Model Comparison and Confidence Intervals of Parameters
+In the following figure, the fitted interaction and parallel lines models are shown next to each other. We particularly take note of the different slopes and intercepts between the two models.
+
+```{r interaction, echo=FALSE, fig.align="center", fig.cap="\\label{fig:interaction} Fitted regression lines for the interaction model (left) and the parallel lines model (right).", fig.pos="H", fig.width=9, message=FALSE, warning=FALSE, out.width='90%', paged.print=FALSE}
+
+int <- ggplot(admissions, aes(x = GRE.Score, y = Chance.of.Admit, color = research)) +
+  geom_jitter() +
+  labs(x = "GRE Score", y = "Chance of Admit", color = "Research") +
+  theme(legend.position="top") +
+  geom_smooth(method = "lm", se = TRUE)
+
+coeff  <- par.model %>% 
+  coef() %>%
+  as.numeric()
+
+ slopes <- admissions %>%
+  group_by(research) %>%
+  summarise(min = min(GRE.Score), max = max(GRE.Score)) %>%
+  mutate(intercept = coeff[1]) %>%
+  mutate(intercept = ifelse(research == "Yes", intercept + coeff[3], intercept)) %>%
+  gather(point, GRE.Score, -c(research, intercept)) %>%
+  mutate(y_hat = intercept + GRE.Score * coeff[2])
+
+ par <- ggplot(admissions, aes(x = GRE.Score, y = Chance.of.Admit, col = research)) +
+  geom_jitter() +
+  labs(x = "GRE Score", y = "Chance of Admit", color = "Research") +
+  theme(legend.position="top") +
+  geom_smooth(data = slopes, aes(y = y_hat), size = 1, method="lm", se = TRUE)
+
+grid.arrange(int, par, ncol = 2)
+```
+
+Tables 5 and 6 below show regression summaries for the interaction and the parallel lines models respectively. All parameters are significant in both models since the 95% confidence intervals do not include zero.
+
+```{r int.ci, echo=F, message=FALSE, warning=FALSE, paged.print=FALSE}
+get_regression_table(int.model) %>% 
+  knitr::kable(
+    digits = 3,
+    caption = "Regression table with interaction effect (interaction)", 
+    booktabs = TRUE
+  ) %>%
+  kable_styling(latex_options = 'HOLD_position')
+```
+
+```{r par.ci, echo=F, message=FALSE, warning=FALSE, paged.print=FALSE}
+get_regression_table(par.model) %>% 
+  knitr::kable(
+    digits = 3,
+    caption = "Regression table without interaction effect (parallel lines)", 
+    booktabs = TRUE
+  ) %>%
+  kable_styling(latex_options = 'HOLD_position')
+```
+
+## Model Selection
+From table 7 below, we can see that the adjusted R-squared (`adj.r.squared`) is higher while at the same time the AIC and BIC are lower when using the interaction model over the parallel lines one. As a result, the interaction model achieves a better overall fit to the data and will be our model of choice because it describes the relationship between the response and explanatory variables more accurately. Allowing for different slopes seems necessary and was previously suggested by the differing correlation coefficients between the two levels of `research`.   
+```{r selection, echo=FALSE, message=FALSE, warning=FALSE}
+model.par<-glance(par.model)
+model.int<-glance(int.model)
+Models <- c("Interaction", "Parallel") 
+bind_rows(model.int,model.par,.id="Model") %>%
+  select(Model,adj.r.squared,AIC,BIC) %>%
+  mutate(Model=Models) %>%  
+  kable(
+     digits = 3,
+     caption = "Model comparison values for two models"
+  ) %>%
+  kable_styling(latex_options = 'HOLD_position')
+```
+
+The interaction model an adjusted R-squared value of 0.66, thus two-thirds of the variation in the response variable `Chance.of.Admit` is explained by the explanatory variables `GRE.Score` and `research`. This represents a moderate fit to the data and is a common result when the number of included covariates is relatively low (as is the case here).  
+
+## Modelling Assumptions
+Before proceeding with the interaction model, it is important to examine the validity of the modelling assumptions in our chosen model. These include that the residuals should be normally distributed, have a mean of zero and display a constant variance within the group of researchers and non-researchers across all observations. Formally, we test for:
+$$E(\widehat{\epsilon_i})=0~~,~~Var(\widehat{\epsilon_i})=\sigma^{{2}}~~~~~s.t.~~~~~\widehat{\epsilon_i}\sim N(0, ~\sigma^{{2}})$$
+In order to reveal systematic patterns, we produce scatterplots of the residuals against the explanatory variable `GRE.Score` as well as against the fitted values for the response variable `Chance.of.Admit`. The associated plots can be seen in Figure \ref{fig:resids} below. 
+
+```{r residplots, echo=FALSE, fig.align="center", fig.cap = "\\label{fig:resids} Scatterplots of the residuals against GRE score (left) and the fitted values (right) by research.", fig.pos="H", fig.width=15, message=FALSE, warning=FALSE, out.width='100%'}
+
+# Residual points for the interaction model
+reg_points.int <- get_regression_points(int.model)
+
+# Residuals vs. Explanatory (GRE.Score): Check Assumption 1 - Zero mean of residuals 
+p1<-ggplot(reg_points.int, aes(x = GRE.Score, y = residual)) +
+  geom_point() +
+  labs(x = "GRE Score", y = "Residual") +
+  geom_hline(yintercept = 0, col = "blue", size = 1) +
+  facet_wrap(~ research)
+
+# Residuals vs. Fitted values (y_hat): Check Assumption 2 - constant variance of residuals 
+p2<-ggplot(reg_points.int, aes(x = Chance.of.Admit_hat, y = residual)) +
+  geom_point() +
+  labs(x = "Fitted Values", y = "Residual") +
+  geom_hline(yintercept = 0, col = "blue", size = 1) +
+  facet_wrap(~ research)
+
+grid.arrange(p1, p2, ncol = 2)
+```
+The scatterplots show a relatively even spread of the residuals above and below the zero line for each level in the variable research, and hence have mean zero. Moreover, since the spread across all explanatory and fitted values appears to be constant (on average), there is no sufficient evidence for the existence of a systematic pattern in the residuals. Based on this examination, we conclude that the random error component of our interaction model satisfies the assumptions of having a mean of zero and a constant variance.
+
+Subsequently, we check for normality of the residuals.
+```{r residualhist_int, echo=FALSE, fig.align="center", fig.cap="\\label{fig:residhist_int} Histogram of the residual distribution.", fig.pos="H", fig.width=13, message=FALSE, warning=FALSE, out.width='100%'}
+
+# Histogram of Residuals: Check Assumption 3 - Normality of residuals 
+ggplot(reg_points.int, aes(x = residual)) +
+geom_histogram(binwidth = 0.05, color = "white") +
+labs(x = "Residual") +
+facet_wrap(~ research)
+```
+Figure \ref{fig:residualhist_int} displays the histograms of the residuals for both levels of research. Although the data seems to be slightly left-skewed for both groups of researchers, this does not represent a serious issue as the histograms appear to be relatively symmetrical and centred around zero. 
+
+# Conclusion {#sec:con}
+To sum up, there was a significant effect of research on the chance of admission for both, the interaction and the parallel lines models. Model selection procedure revealed that the interaction model, which allows for different slopes and intercepts for the two levels of research, describes the relationship between the response and explanatory variables more accurately than the parallel lines model. Adjusted R-squared for the interaction model was 0.66, which despite giving a moderate fit to the data, is normal when considering a limited number of included covariates.  
+
+We have estimated that, on average, with every point increase in GRE score graduates with prior research experience have a 0.003 higher chance of being admitted to a graduate programme, as compared to students with no research experience. It was also observed that for GRE scores below 300, the fitted line for researchers lies below that of non-researchers, indicating the positive effect of research experience in particular for higher GRE scores. 
