@@ -11,3 +11,5 @@ Dataset: n=400 UCLA graduates
 Implementation and evaluation of following regression models in R Markdown: 
 1) Interaction Model
 2) Parallel Lines Model
+
+Main finding: positive effect of research experience in particular for higher GRE scores
