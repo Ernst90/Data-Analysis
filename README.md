@@ -2,7 +2,7 @@
 
 Research Question: "The Effect of Research Experience on Graduate Admissions"
 
-Dataset: n=400 observations
+Dataset: n=400 UCLA graduates
 
 - contineous predictor: "GRE Score"  (0 to 400)
 - categorical predictor: "Research" (levels: yes=1, no=0)
