@@ -1,6 +1,6 @@
 # Data-Analysis
 
-Research Question:  "The Effect of Research Experience on Graduate Admissions"
+Project: The Effect of Research Experience on Graduate Admissions.
 
 Dataset: n=400 UCLA graduates
 
