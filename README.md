@@ -4,7 +4,7 @@ Project: The Effect of Research Experience on Graduate Admissions.
 
 Dataset: n=400 UCLA graduates
 
-- contineous predictor:  "GRE Score"  (0 to 400)
+- contineous predictor:  "GRE Score"  (0 to 340)
 - categorical predictor:  "Research" (levels: yes=1, no=0)
 - predictand:  "Chance of Admission" (0 to 1)
 
